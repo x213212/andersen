@@ -497,11 +497,11 @@ int main()
 ![](https://i.imgur.com/UD7yEYF.png)
 
 ```bash=
+cd test
 vim gen.cpp 
 g++ gen.cpp  -o gen
 ./gen 
 clang -S -emit-llvm exampletest.c -o testexe.ll
-
 opt-10 -S -load ../lib/libAndersen.so -dump-result  -anders-aa  ./testexe.ll  -o andertest.ll
 ```
 
