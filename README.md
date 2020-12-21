@@ -131,7 +131,10 @@ https://github.com/grievejia/andersen/blob/ec036a43ac7bc3523cf50d43ad711c095c5f1
   case Instruction::Alloca: {
   
 這是原來的分析方式，程式流程 每一個 stmt 走 switch case 應該會是這樣
+
 ![](https://i.imgur.com/c0AjOWK.png)
+
+
 應該是這樣子的走法，我想假設我在這邊引用thread pool 會發生什麼事
 我隨便找了一個 thread pool 就直接改了
 https://github.com/AngryHacker/articles/issues/1#issue-369867252
