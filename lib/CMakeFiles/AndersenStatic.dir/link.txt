@@ -1,0 +1,2 @@
+/usr/bin/ar qc libAndersenStatic.a  CMakeFiles/AndersenObj.dir/Andersen.cpp.o CMakeFiles/AndersenObj.dir/AndersenAA.cpp.o CMakeFiles/AndersenObj.dir/ConstraintCollect.cpp.o CMakeFiles/AndersenObj.dir/ConstraintOptimize.cpp.o CMakeFiles/AndersenObj.dir/ConstraintSolving.cpp.o CMakeFiles/AndersenObj.dir/ExternalLibrary.cpp.o CMakeFiles/AndersenObj.dir/NodeFactory.cpp.o
+/usr/bin/ranlib libAndersenStatic.a

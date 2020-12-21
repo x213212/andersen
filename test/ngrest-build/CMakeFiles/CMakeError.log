@@ -1,0 +1,17 @@
+Determining if the include file json-c/json.h exists failed with the following output:
+Change Dir: /home/x213212/softansyis/gnn/andersen/test/ngrest-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_defb5/fast && /usr/bin/make -f CMakeFiles/cmTC_defb5.dir/build.make CMakeFiles/cmTC_defb5.dir/build
+make[1]: 進入目錄「/home/x213212/softansyis/gnn/andersen/test/ngrest-build/CMakeFiles/CMakeTmp」
+Building CXX object CMakeFiles/cmTC_defb5.dir/CheckIncludeFile.cxx.o
+/usr/bin/c++    -std=gnu++11 -pedantic -Wall    -o CMakeFiles/cmTC_defb5.dir/CheckIncludeFile.cxx.o -c /home/x213212/softansyis/gnn/andersen/test/ngrest-build/CMakeFiles/CMakeTmp/CheckIncludeFile.cxx
+/home/x213212/softansyis/gnn/andersen/test/ngrest-build/CMakeFiles/CMakeTmp/CheckIncludeFile.cxx:1:10: fatal error: json-c/json.h: 沒有此一檔案或目錄
+    1 | #include <json-c/json.h>
+      |          ^~~~~~~~~~~~~~~
+compilation terminated.
+make[1]: *** [CMakeFiles/cmTC_defb5.dir/build.make:66：CMakeFiles/cmTC_defb5.dir/CheckIncludeFile.cxx.o] 錯誤 1
+make[1]: 離開目錄「/home/x213212/softansyis/gnn/andersen/test/ngrest-build/CMakeFiles/CMakeTmp」
+make: *** [Makefile:121：cmTC_defb5/fast] 錯誤 2
+
+
+

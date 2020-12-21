@@ -1,0 +1,6 @@
+# Hashes of file build rules.
+7a0f0a765e3be160b075fa102f1c1fb3 examples/crud/codegen/ServiceGroupImpl.h
+946fbe415df8325d7f881165509f73db examples/echo/codegen/ServiceGroupImpl.h
+7f91331de9fc11634db152ebb8b4a0a1 services/favicon/codegen/ServiceGroupImpl.h
+e8b3171dfb9201ad9f8c2b4499d2ab7f services/serverstatus/codegen/ServiceGroupImpl.h
+7d63c642afdce7bf709d2a100c823099 tests/service/codegen/ServiceGroupImpl.h

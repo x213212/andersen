@@ -74,7 +74,14 @@ private:
 
   // Helper functions for constraint collection
   void collectConstraintsForGlobals(const llvm::Module &);
-  void collectConstraintsForInstruction(const llvm::Instruction *);
+  //haha
+  void instAlloca(const llvm::Instruction *);
+  void instInvoke(const llvm::Instruction *);
+  void instRet(const llvm::Instruction *);
+  void instLoad(const llvm::Instruction *);
+  void instStore(const llvm::Instruction *);
+  // void dummy_task(void *arg) ;
+  
   void addGlobalInitializerConstraints(NodeIndex, const llvm::Constant *);
   void addConstraintForCall(llvm::ImmutableCallSite cs);
   bool addConstraintForExternalLibrary(llvm::ImmutableCallSite cs,
@@ -91,10 +98,11 @@ private:
   void dumpConstraints() const;
   void dumpConstraintsPlainVanilla() const;
   void dumpPtsGraphPlainVanilla() const;
+  
 
 public:
   static char ID;
-
+void collectConstraintsForInstruction(const llvm::Instruction *);
   Andersen(const llvm::Module &);
   bool runOnModule(const llvm::Module &M);
 

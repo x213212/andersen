@@ -1,0 +1,1 @@
+/usr/bin/c++   -std=gnu++11 -pedantic -Wall -g   -Wl,--no-undefined -rdynamic CMakeFiles/ngrestjsontest.dir/src/jsontest.cpp.o  -o ../../deploy/tests/ngrestjsontest  -Wl,-rpath,/home/x213212/softansyis/gnn/andersen/test/ngrest-build/deploy/lib ../../deploy/lib/libngrestjson.so ../../deploy/lib/libngrestcommon.so ../../deploy/lib/libngrestutils.so -ldl 

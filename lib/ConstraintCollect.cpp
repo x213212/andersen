@@ -8,14 +8,36 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Support/raw_ostream.h"
-
+#include <assert.h>
+#include <iostream>
+#include <map>
+#include <omp.h>
+#include <pthread.h>
+#include <threadpool.h>
+#include <time.h>
+#define THREAD 4
+#define QUEUE 58000
+#include <unistd.h>
 using namespace llvm;
+using namespace std;
+map<int, const llvm::Instruction *> mymap;
+int tasks = 0, done = 0;
+pthread_mutex_t lock;
+// fptr f;
+Andersen *thistmp;
 
 // CollectConstraints - This stage scans the program, adding a constraint to the
 // Constraints list for each instruction in the program that induces a
 // constraint, and setting up the initial points-to graph.
+void dummy_task(void *arg);
+// void Andersen::collectConstraintsForInstruction(const Instruction *inst);
+typedef void (Andersen::*fptr)(const llvm::Instruction *);
+map<const llvm::Instruction *, fptr> mymap2;
 
 void Andersen::collectConstraints(const Module &M) {
+
+  thistmp = this;
+  fprintf(stderr, "%p\n", this);
   // First, the universal ptr points to universal obj, and the universal obj
   // points to itself
   constraints.emplace_back(AndersConstraint::ADDR_OF,
@@ -41,6 +63,21 @@ void Andersen::collectConstraints(const Module &M) {
   // -internalize pass before the -anders pass, almost every function is marked
   // external. We'll just assume that even external linkage will not ruin the
   // analysis result first
+  clock_t start, end;
+  double cpu_time_used;
+  threadpool_t *pool;
+  /* 初始化互斥锁 */
+  pthread_mutex_init(&lock, NULL);
+
+  /* 断言线程池创建成功 */
+  assert((pool = threadpool_create(THREAD, QUEUE, 0)) != NULL);
+  fprintf(stderr,
+          "Pool started with %d threads and "
+          "queue size of %d\n",
+          THREAD, QUEUE);
+
+  // 開始計算時間
+  start = clock();
 
   for (auto const &f : M) {
     if (f.isDeclaration() || f.isIntrinsic())
@@ -62,12 +99,174 @@ void Andersen::collectConstraints(const Module &M) {
     }
 
     // Now, collect constraint for each relevant instruction
+    //#pragma omp for schedule(static)
     for (const_inst_iterator itr = inst_begin(f), ite = inst_end(f); itr != ite;
          ++itr) {
+
+      // fprintf(stderr, "%p\n", &inst);
       auto inst = &*itr.getInstructionIterator();
-      collectConstraintsForInstruction(inst);
+      threadpool_add(pool, &dummy_task, (Instruction *)inst, 0);
+      pthread_mutex_lock(&lock);
+      tasks++;
+      pthread_mutex_unlock(&lock);
+
+      // collectConstraintsForInstruction(inst);
     }
   }
+
+  /* 只要任务队列还没满，就一直添加 */
+  // while(threadpool_add(pool, &dummy_task, NULL, 0) == 0) {
+  //     pthread_mutex_lock(&lock);
+  //     tasks++;
+  //     pthread_mutex_unlock(&lock);
+  // }
+  //  const Instruction *tmp;
+  //   for (int i = 0 ; i < 100  ; i ++)
+  //   {
+  //   threadpool_add(pool, &dummy_task, &tmp, 0);
+  //        pthread_mutex_lock(&lock);
+  //       tasks++;
+  //       pthread_mutex_unlock(&lock);
+  //   }
+  fprintf(stderr, "Added %d tasks\n", tasks);
+
+  /* 不断检查任务数是否完成一半以上，没有则继续休眠 */
+  while (done != tasks) {
+    // fprintf(stderr, "Did %d tasks\n", done);
+    // usleep(1);
+  }
+  fprintf(stderr, "Did %d tasks\n", done);
+  /* 这时候销毁线程池,0 代表 immediate_shutdown */
+
+  assert(threadpool_destroy(pool, 0) == 0);
+  int k = 0;
+  for (auto const &f : M) {
+    if (f.isDeclaration() || f.isIntrinsic())
+      continue;
+    for (const_inst_iterator itr = inst_begin(f), ite = inst_end(f); itr != ite;
+         ++itr) {
+      k++;
+
+      auto inst = &*itr.getInstructionIterator();
+      // fprintf(stderr, "%p\n", &inst);
+
+      fptr f = mymap2.find((Instruction *)inst)->second;
+      ;
+      (this->*f)(inst);
+      // fprintf(stderr, "%d\n", k);
+      // mymap2[inst] = f;
+      // collectConstraintsForInstruction(inst);
+    }
+  }
+  // map<const llvm::Instruction *, fptr> mymap2;
+  // map<const llvm::Instruction *, fptr>::iterator it;
+  //   for (it = mymap2.begin(); it != mymap2.end(); ++it)
+  //   {
+  //     k++;
+  //    //   cout << it->first << ends << it->second << endl;
+  //          fptr f = it->second;;
+  //   (this->*f)( it->first);
+  //   }
+  fprintf(stderr, "%d\n", k);
+
+  end = clock();
+  cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+
+  printf("Time = %f\n", cpu_time_used);
+}
+void dummy_task(void *arg) {
+  // sleep(1);
+  // cout <<"weqwe" <<endl;
+  // fprintf(stderr, "ssss%p\n", tmp);
+  // this
+  // cout << "fuck123" <<endl;
+  // Andersen xobject;
+
+  //   switch (tmp->getOpcode()) {
+
+  // case Instruction::Alloca: {
+  //   //  Andersen *p =this;
+  //   // cout << "Alloca" <<endl;
+  //  // cout << "fuck123" <<endl;
+  //  // fptr f = &Andersen::instAlloca;
+  //  // mymap2[inst] = f;
+  //   cout << "fuck123" <<endl;
+
+  //   // Andersen xobject;
+  //   //(this->*f)(inst);
+  //   //
+  //   //(this)->f(inst);
+  //   // instAlloca(inst);
+  //   break;
+  // }
+  // case Instruction::Call:
+  // case Instruction::Invoke: {
+  //  // fptr f = &Andersen::instInvoke;
+
+  //  // (this->*f)(inst);
+  // //  mymap2[inst] = f;
+  //     cout << "fuck" <<endl;
+  //   // fptr f = instInvoke;
+  //   // f(inst);
+
+  //   break;
+  // }
+  // case Instruction::Ret: {
+  //   // fptr f = &Andersen::instRet;
+  //  // (this->*f)(inst);
+  //   // mymap2[inst] = f;
+  //    cout << "fuck2" <<endl;
+  //   // fptr f = instRet;
+  //   // f(inst);
+
+  //   break;
+  // }
+  // case Instruction::Load: {
+  //   // fptr f = &Andersen::instLoad;
+  // //  (this->*f)(inst);
+  //   // mymap2[inst] = f;
+  //     cout << "fuck3" <<endl;
+  //   // fptr f = instLoad;
+  //   // f(inst);
+  //   // instLoad(inst);
+  //   break;
+  // }
+  // case Instruction::Store: {
+  //   //  cout << "fuck4" <<endl;
+  //   // fptr f = &Andersen::instStore;
+  //   // mymap2[inst] = f;
+  // //  (this->*f)(inst);
+
+  //   // fptr f = instStore;
+  //   //  f(inst);
+  //   // instStore(inst);
+  //   break;
+  // }
+  //   }
+  //   //  Andersen *p =this;
+  //   // cout << "Alloca" <<endl;
+  // cout << "fuck123" <<endl;
+  //   //fptr f = &Andersen::instAlloca;
+  //   //mymap2[inst] = f;
+  //   cout << "fuck123" <<endl;
+
+  //   // Andersen xobject;
+  //   //(this->*f)(inst);
+  //   //
+  //   //(this)->f(inst);
+  //   // instAlloca(inst);
+  //  collectConstraintsForInstruction(*tmp);
+  /* 记录成功完成的任务数 */
+  (thistmp->collectConstraintsForInstruction)((Instruction *)arg);
+  // pthread_mutex_lock(&lock);
+  // auto *tmp = arg;
+  // usleep(10);
+  // done++;
+
+  // fprintf(stderr, "Did %d tasks\n", done);
+
+  // pthread_mutex_unlock(&lock);
+  //   usleep(100000);
 }
 
 void Andersen::collectConstraintsForGlobals(const Module &M) {
@@ -151,198 +350,282 @@ void Andersen::addGlobalInitializerConstraints(NodeIndex objNode,
   }
 }
 
+void Andersen::instAlloca(const Instruction *inst) {
+ 
+  NodeIndex valNode = nodeFactory.getValueNodeFor(inst);
+  assert(valNode != AndersNodeFactory::InvalidIndex &&
+         "Failed to find alloca value node");
+  NodeIndex objNode = nodeFactory.createObjectNode(inst);
+  constraints.emplace_back(AndersConstraint::ADDR_OF, valNode, objNode);
+}
+void Andersen::instInvoke(const Instruction *inst) {
+
+  ImmutableCallSite cs(inst);
+  assert(cs && "Something wrong with callsite?");
+  addConstraintForCall(cs);
+}
+void Andersen::instRet(const Instruction *inst) {
+
+  if (inst->getNumOperands() > 0 &&
+      inst->getOperand(0)->getType()->isPointerTy()) {
+    NodeIndex retIndex =
+        nodeFactory.getReturnNodeFor(inst->getParent()->getParent());
+    assert(retIndex != AndersNodeFactory::InvalidIndex &&
+           "Failed to find return node");
+    NodeIndex valIndex = nodeFactory.getValueNodeFor(inst->getOperand(0));
+    assert(valIndex != AndersNodeFactory::InvalidIndex &&
+           "Failed to find return value node");
+    constraints.emplace_back(AndersConstraint::COPY, retIndex, valIndex);
+  }
+}
+void Andersen::instLoad(const Instruction *inst) {
+
+  if (inst->getType()->isPointerTy()) {
+    NodeIndex opIndex = nodeFactory.getValueNodeFor(inst->getOperand(0));
+    assert(opIndex != AndersNodeFactory::InvalidIndex &&
+           "Failed to find load operand node");
+    NodeIndex valIndex = nodeFactory.getValueNodeFor(inst);
+    assert(valIndex != AndersNodeFactory::InvalidIndex &&
+           "Failed to find load value node");
+    constraints.emplace_back(AndersConstraint::LOAD, valIndex, opIndex);
+  }
+}
+void Andersen::instStore(const Instruction *inst) {
+ 
+  if (inst->getOperand(0)->getType()->isPointerTy()) {
+    NodeIndex srcIndex = nodeFactory.getValueNodeFor(inst->getOperand(0));
+    assert(srcIndex != AndersNodeFactory::InvalidIndex &&
+           "Failed to find store src node");
+    NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst->getOperand(1));
+    assert(dstIndex != AndersNodeFactory::InvalidIndex &&
+           "Failed to find store dst node");
+    constraints.emplace_back(AndersConstraint::STORE, dstIndex, srcIndex);
+  }
+}
+
 void Andersen::collectConstraintsForInstruction(const Instruction *inst) {
+  // cout << "fuck in side" <<endl;
   switch (inst->getOpcode()) {
+
   case Instruction::Alloca: {
-    NodeIndex valNode = nodeFactory.getValueNodeFor(inst);
-    assert(valNode != AndersNodeFactory::InvalidIndex &&
-           "Failed to find alloca value node");
-    NodeIndex objNode = nodeFactory.createObjectNode(inst);
-    constraints.emplace_back(AndersConstraint::ADDR_OF, valNode, objNode);
+    //  Andersen *p =this;
+    // cout << "Alloca" <<endl;
+    // cout << "fuck123" <<endl;
+    pthread_mutex_lock(&lock);
+
+    fptr f = &Andersen::instAlloca;
+    mymap2[inst] = f;
+    done++;
+    pthread_mutex_unlock(&lock);
+    // Andersen xobject;
+    // (this->*f)(inst);
+    //
+    //(this)->f(inst);
+    // instAlloca(inst);
     break;
   }
   case Instruction::Call:
   case Instruction::Invoke: {
-    ImmutableCallSite cs(inst);
-    assert(cs && "Something wrong with callsite?");
+    pthread_mutex_lock(&lock);
+    fptr f = &Andersen::instInvoke;
 
-    addConstraintForCall(cs);
+    //  (this->*f)(inst);
+    mymap2[inst] = f;
+    done++;
+    pthread_mutex_unlock(&lock);
+    //   cout << "fuck" <<endl;
+    // fptr f = instInvoke;
+    // f(inst);
 
     break;
   }
   case Instruction::Ret: {
-    if (inst->getNumOperands() > 0 &&
-        inst->getOperand(0)->getType()->isPointerTy()) {
-      NodeIndex retIndex =
-          nodeFactory.getReturnNodeFor(inst->getParent()->getParent());
-      assert(retIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find return node");
-      NodeIndex valIndex = nodeFactory.getValueNodeFor(inst->getOperand(0));
-      assert(valIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find return value node");
-      constraints.emplace_back(AndersConstraint::COPY, retIndex, valIndex);
-    }
+    pthread_mutex_lock(&lock);
+    fptr f = &Andersen::instRet;
+    //  (this->*f)(inst);
+    mymap2[inst] = f;
+    done++;
+    pthread_mutex_unlock(&lock);
+    //  cout << "fuck2" <<endl;
+    // fptr f = instRet;
+    // f(inst);
+
     break;
   }
   case Instruction::Load: {
-    if (inst->getType()->isPointerTy()) {
-      NodeIndex opIndex = nodeFactory.getValueNodeFor(inst->getOperand(0));
-      assert(opIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find load operand node");
-      NodeIndex valIndex = nodeFactory.getValueNodeFor(inst);
-      assert(valIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find load value node");
-      constraints.emplace_back(AndersConstraint::LOAD, valIndex, opIndex);
-    }
+    pthread_mutex_lock(&lock);
+    fptr f = &Andersen::instLoad;
+    //  (this->*f)(inst);
+    mymap2[inst] = f;
+    done++;
+    pthread_mutex_unlock(&lock);
+    //  cout << "fuck3" <<endl;
+    // fptr f = instLoad;
+    // f(inst);
+    // instLoad(inst);
     break;
   }
   case Instruction::Store: {
-    if (inst->getOperand(0)->getType()->isPointerTy()) {
-      NodeIndex srcIndex = nodeFactory.getValueNodeFor(inst->getOperand(0));
-      assert(srcIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find store src node");
-      NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst->getOperand(1));
-      assert(dstIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find store dst node");
-      constraints.emplace_back(AndersConstraint::STORE, dstIndex, srcIndex);
-    }
-    break;
-  }
-  case Instruction::GetElementPtr: {
-    assert(inst->getType()->isPointerTy());
+    pthread_mutex_lock(&lock);
+    //   cout << "fuck4" <<endl;
+    fptr f = &Andersen::instStore;
+    mymap2[inst] = f;
+    done++;
+    pthread_mutex_unlock(&lock);
+    //  (this->*f)(inst);
 
-    // P1 = getelementptr P2, ... --> <Copy/P1/P2>
-    NodeIndex srcIndex = nodeFactory.getValueNodeFor(inst->getOperand(0));
-    assert(srcIndex != AndersNodeFactory::InvalidIndex &&
-           "Failed to find gep src node");
-    NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst);
-    assert(dstIndex != AndersNodeFactory::InvalidIndex &&
-           "Failed to find gep dst node");
-
-    constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex);
-
-    break;
-  }
-  case Instruction::PHI: {
-    if (inst->getType()->isPointerTy()) {
-      const PHINode *phiInst = cast<PHINode>(inst);
-      NodeIndex dstIndex = nodeFactory.getValueNodeFor(phiInst);
-      assert(dstIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find phi dst node");
-      for (unsigned i = 0, e = phiInst->getNumIncomingValues(); i != e; ++i) {
-        NodeIndex srcIndex =
-            nodeFactory.getValueNodeFor(phiInst->getIncomingValue(i));
-        assert(srcIndex != AndersNodeFactory::InvalidIndex &&
-               "Failed to find phi src node");
-        constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex);
-      }
-    }
-    break;
-  }
-  case Instruction::BitCast: {
-    if (inst->getType()->isPointerTy()) {
-      NodeIndex srcIndex = nodeFactory.getValueNodeFor(inst->getOperand(0));
-      assert(srcIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find bitcast src node");
-      NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst);
-      assert(dstIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find bitcast dst node");
-      constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex);
-    }
-    break;
-  }
-  case Instruction::IntToPtr: {
-    assert(inst->getType()->isPointerTy());
-
-    // Get the node index for dst
-    NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst);
-    assert(dstIndex != AndersNodeFactory::InvalidIndex &&
-           "Failed to find inttoptr dst node");
-
-    // We use pattern matching to look for a matching ptrtoint
-    Value *op = inst->getOperand(0);
-
-    // Pointer copy: Y = inttoptr (ptrtoint X)
-    Value *srcValue = nullptr;
-    if (PatternMatch::match(
-            op, PatternMatch::m_PtrToInt(PatternMatch::m_Value(srcValue)))) {
-      NodeIndex srcIndex = nodeFactory.getValueNodeFor(srcValue);
-      assert(srcIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find inttoptr src node");
-      constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex);
-      break;
-    }
-
-    // Pointer arithmetic: Y = inttoptr (ptrtoint (X) + offset)
-    if (PatternMatch::match(
-            op, PatternMatch::m_Add(
-                    PatternMatch::m_PtrToInt(PatternMatch::m_Value(srcValue)),
-                    PatternMatch::m_Value()))) {
-      NodeIndex srcIndex = nodeFactory.getValueNodeFor(srcValue);
-      assert(srcIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find inttoptr src node");
-      constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex);
-      break;
-    }
-
-    // Otherwise, we really don't know what dst points to
-    constraints.emplace_back(AndersConstraint::COPY, dstIndex,
-                             nodeFactory.getUniversalPtrNode());
-
-    break;
-  }
-  case Instruction::Select: {
-    if (inst->getType()->isPointerTy()) {
-      NodeIndex srcIndex1 = nodeFactory.getValueNodeFor(inst->getOperand(1));
-      assert(srcIndex1 != AndersNodeFactory::InvalidIndex &&
-             "Failed to find select src node 1");
-      NodeIndex srcIndex2 = nodeFactory.getValueNodeFor(inst->getOperand(2));
-      assert(srcIndex2 != AndersNodeFactory::InvalidIndex &&
-             "Failed to find select src node 2");
-      NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst);
-      assert(dstIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find select dst node");
-      constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex1);
-      constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex2);
-    }
-    break;
-  }
-  case Instruction::VAArg: {
-    if (inst->getType()->isPointerTy()) {
-      NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst);
-      assert(dstIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find va_arg dst node");
-      NodeIndex vaIndex =
-          nodeFactory.getVarargNodeFor(inst->getParent()->getParent());
-      assert(vaIndex != AndersNodeFactory::InvalidIndex &&
-             "Failed to find vararg node");
-      constraints.emplace_back(AndersConstraint::COPY, dstIndex, vaIndex);
-    }
-    break;
-  }
-  case Instruction::ExtractValue:
-  case Instruction::InsertValue: {
-    if (!inst->getType()->isPointerTy())
-      break;
-  }
-  // We have no intention to support exception-handling in the near future
-  case Instruction::LandingPad:
-  case Instruction::Resume:
-  // Atomic instructions can be modeled by their non-atomic counterparts. To be
-  // supported
-  case Instruction::AtomicRMW:
-  case Instruction::AtomicCmpXchg: {
-    errs() << *inst << "\n";
-    llvm_unreachable("not implemented yet");
-  }
-  default: {
-    if (inst->getType()->isPointerTy()) {
-      errs() << *inst << "\n";
-      llvm_unreachable("pointer-related inst not handled!");
-    }
+    // fptr f = instStore;
+    //  f(inst);
+    // instStore(inst);
     break;
   }
   }
+  // case Instruction::GetElementPtr: {
+  //   cout << "fuck5" << endl;
+  //   assert(inst->getType()->isPointerTy());
+
+  //   // P1 = getelementptr P2, ... --> <Copy/P1/P2>
+  //   NodeIndex srcIndex = nodeFactory.getValueNodeFor(inst->getOperand(0));
+  //   assert(srcIndex != AndersNodeFactory::InvalidIndex &&
+  //          "Failed to find gep src node");
+  //   NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst);
+  //   assert(dstIndex != AndersNodeFactory::InvalidIndex &&
+  //          "Failed to find gep dst node");
+
+  //   constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex);
+
+  //   break;
+  // }
+  // case Instruction::PHI: {
+  //   cout << "fuck6" << endl;
+  //   if (inst->getType()->isPointerTy()) {
+  //     const PHINode *phiInst = cast<PHINode>(inst);
+  //     NodeIndex dstIndex = nodeFactory.getValueNodeFor(phiInst);
+  //     assert(dstIndex != AndersNodeFactory::InvalidIndex &&
+  //            "Failed to find phi dst node");
+  //     for (unsigned i = 0, e = phiInst->getNumIncomingValues(); i != e; ++i)
+  //     {
+  //       NodeIndex srcIndex =
+  //           nodeFactory.getValueNodeFor(phiInst->getIncomingValue(i));
+  //       assert(srcIndex != AndersNodeFactory::InvalidIndex &&
+  //              "Failed to find phi src node");
+  //       constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex);
+  //     }
+  //   }
+  //   break;
+  // }
+  // case Instruction::BitCast: {
+
+  //   if (inst->getType()->isPointerTy()) {
+  //     cout << "fuck7" << endl;
+  //     NodeIndex srcIndex = nodeFactory.getValueNodeFor(inst->getOperand(0));
+  //     assert(srcIndex != AndersNodeFactory::InvalidIndex &&
+  //            "Failed to find bitcast src node");
+  //     NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst);
+  //     assert(dstIndex != AndersNodeFactory::InvalidIndex &&
+  //            "Failed to find bitcast dst node");
+  //     constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex);
+  //   }
+  //   break;
+  // }
+  // case Instruction::IntToPtr: {
+  //   cout << "fuck8" << endl;
+  //   assert(inst->getType()->isPointerTy());
+
+  //   // Get the node index for dst
+  //   NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst);
+  //   assert(dstIndex != AndersNodeFactory::InvalidIndex &&
+  //          "Failed to find inttoptr dst node");
+
+  //   // We use pattern matching to look for a matching ptrtoint
+  //   Value *op = inst->getOperand(0);
+
+  //   // Pointer copy: Y = inttoptr (ptrtoint X)
+  //   Value *srcValue = nullptr;
+  //   if (PatternMatch::match(
+  //           op, PatternMatch::m_PtrToInt(PatternMatch::m_Value(srcValue)))) {
+  //     NodeIndex srcIndex = nodeFactory.getValueNodeFor(srcValue);
+  //     assert(srcIndex != AndersNodeFactory::InvalidIndex &&
+  //            "Failed to find inttoptr src node");
+  //     constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex);
+  //     break;
+  //   }
+
+  //   // Pointer arithmetic: Y = inttoptr (ptrtoint (X) + offset)
+  //   if (PatternMatch::match(
+  //           op, PatternMatch::m_Add(
+  //                   PatternMatch::m_PtrToInt(PatternMatch::m_Value(srcValue)),
+  //                   PatternMatch::m_Value()))) {
+  //     NodeIndex srcIndex = nodeFactory.getValueNodeFor(srcValue);
+  //     assert(srcIndex != AndersNodeFactory::InvalidIndex &&
+  //            "Failed to find inttoptr src node");
+  //     constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex);
+  //     break;
+  //   }
+
+  //   // Otherwise, we really don't know what dst points to
+  //   constraints.emplace_back(AndersConstraint::COPY, dstIndex,
+  //                            nodeFactory.getUniversalPtrNode());
+
+  //   break;
+  // }
+  // case Instruction::Select: {
+  //   cout << "fuck5123" << endl;
+  //   if (inst->getType()->isPointerTy()) {
+  //     NodeIndex srcIndex1 = nodeFactory.getValueNodeFor(inst->getOperand(1));
+  //     assert(srcIndex1 != AndersNodeFactory::InvalidIndex &&
+  //            "Failed to find select src node 1");
+  //     NodeIndex srcIndex2 = nodeFactory.getValueNodeFor(inst->getOperand(2));
+  //     assert(srcIndex2 != AndersNodeFactory::InvalidIndex &&
+  //            "Failed to find select src node 2");
+  //     NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst);
+  //     assert(dstIndex != AndersNodeFactory::InvalidIndex &&
+  //            "Failed to find select dst node");
+  //     constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex1);
+  //     constraints.emplace_back(AndersConstraint::COPY, dstIndex, srcIndex2);
+  //   }
+  //   break;
+  // }
+  // case Instruction::VAArg: {
+  //   cout << "fuc123k5" << endl;
+  //   if (inst->getType()->isPointerTy()) {
+  //     NodeIndex dstIndex = nodeFactory.getValueNodeFor(inst);
+  //     assert(dstIndex != AndersNodeFactory::InvalidIndex &&
+  //            "Failed to find va_arg dst node");
+  //     NodeIndex vaIndex =
+  //         nodeFactory.getVarargNodeFor(inst->getParent()->getParent());
+  //     assert(vaIndex != AndersNodeFactory::InvalidIndex &&
+  //            "Failed to find vararg node");
+  //     constraints.emplace_back(AndersConstraint::COPY, dstIndex, vaIndex);
+  //   }
+  //   break;
+  // }
+  // case Instruction::ExtractValue:
+  // case Instruction::InsertValue: {
+  //   cout << "fuck5123" << endl;
+  //   if (!inst->getType()->isPointerTy())
+  //     break;
+  // }
+  // // We have no intention to support exception-handling in the near future
+  // case Instruction::LandingPad:
+  // case Instruction::Resume:
+  // // Atomic instructions can be modeled by their non-atomic counterparts. To
+  // be
+  // // supported
+  // case Instruction::AtomicRMW:
+  // case Instruction::AtomicCmpXchg: {
+  //   cout << "fuck5123" << endl;
+  //   errs() << *inst << "\n";
+  //   llvm_unreachable("not implemented yet");
+  // }
+  // default: {
+  //   if (inst->getType()->isPointerTy()) {
+  //     errs() << *inst << "\n";
+  //     llvm_unreachable("pointer-related inst not handled!");
+  //   }
+  //   break;
+  // }
+  // }
 }
 
 // There are two types of constraints to add for a function call:
