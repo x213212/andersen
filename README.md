@@ -145,7 +145,7 @@ https://github.com/AngryHacker/articles/issues/1#issue-369867252
 代表 可能nodeFactory 可能有順序上關係，那我們要找方法迴避一下
  > NodeIndex valNode = nodeFactory.getValueNodeFor(inst);
 
-下面有用到一些作弊 和 function 指標的方式算是紀錄一下
+下面有用到一些 function 指標 技巧的方式算是紀錄一下
 我打算 在每一個 task 其實只是單存 插入 以 inst 當 key 和 fptr 當 value
 >typedef void (Andersen::*fptr)(const llvm::Instruction *);
 map<const llvm::Instruction *, fptr> mymap2;
@@ -157,7 +157,7 @@ Andersen *thistmp;
 裡面去 指向自己
 thistmp = this;
 這樣方便我們在 task 指定的時候 防止抓不到 我們自己的 fucntion 
-主要是Andersen fucntion 定義在外面 所以用了指標，絕對不是炫技xd
+主要是Andersen fucntion 定義在外面 所以用了指標
 那麼簡單說一下技巧可能 在 cmake 的時候 仔細看
 ![](https://i.imgur.com/2x0AfNw.png)
 ![](https://i.imgur.com/26mwArT.png)
@@ -341,7 +341,6 @@ void Andersen::instStore(const Instruction *inst) {
   case Instruction::Alloca: {
     //  Andersen *p =this;
     // cout << "Alloca" <<endl;
-    // cout << "fuck123" <<endl;
     pthread_mutex_lock(&lock);
 
     fptr f = &Andersen::instAlloca;
@@ -364,7 +363,7 @@ void Andersen::instStore(const Instruction *inst) {
     mymap2[inst] = f;
     done++;
     pthread_mutex_unlock(&lock);
-    //   cout << "fuck" <<endl;
+    //   cout << "Invoke" <<endl;
     // fptr f = instInvoke;
     // f(inst);
 
@@ -377,7 +376,7 @@ void Andersen::instStore(const Instruction *inst) {
     mymap2[inst] = f;
     done++;
     pthread_mutex_unlock(&lock);
-    //  cout << "fuck2" <<endl;
+    //  cout << "Ret" <<endl;
     // fptr f = instRet;
     // f(inst);
 
@@ -390,7 +389,7 @@ void Andersen::instStore(const Instruction *inst) {
     mymap2[inst] = f;
     done++;
     pthread_mutex_unlock(&lock);
-    //  cout << "fuck3" <<endl;
+    //  cout << "Load" <<endl;
     // fptr f = instLoad;
     // f(inst);
     // instLoad(inst);
@@ -398,7 +397,7 @@ void Andersen::instStore(const Instruction *inst) {
   }
   case Instruction::Store: {
     pthread_mutex_lock(&lock);
-    //   cout << "fuck4" <<endl;
+    //   cout << "Store" <<endl;
     fptr f = &Andersen::instStore;
     mymap2[inst] = f;
     done++;
@@ -427,7 +426,6 @@ fprintf(stderr, "Added %d tasks\n", tasks);
   }
   fprintf(stderr, "Did %d tasks\n", done);
   /* 这时候销毁线程池,0 代表 immediate_shutdown */
-
   assert(threadpool_destroy(pool, 0) == 0);
   int k = 0;
   for (auto const &f : M) {
@@ -436,16 +434,12 @@ fprintf(stderr, "Added %d tasks\n", tasks);
     for (const_inst_iterator itr = inst_begin(f), ite = inst_end(f); itr != ite;
          ++itr) {
       k++;
-
       auto inst = &*itr.getInstructionIterator();
       // fprintf(stderr, "%p\n", &inst);
         去找我的 key 和 value
       fptr f = mymap2.find((Instruction *)inst)->second;
-      ;
       (this->*f)(inst);
-      // fprintf(stderr, "%d\n", k);
-      // mymap2[inst] = f;
-      // collectConstraintsForInstruction(inst);
+
     }
   }
 ```
@@ -511,7 +505,7 @@ clang -S -emit-llvm exampletest.c -o testexe.ll
 opt-10 -S -load ../lib/libAndersen.so -dump-result  -anders-aa  ./testexe.ll  -o andertest.ll
 ```
 
-真實環境我是不知道有沒有這麼多指標互指，大專案應該是有
+真實環境我是不知道有沒有這麼多指標互指 透過inline 的話，大專案應該是有
 ![](https://i.imgur.com/G5qjUJb.png)
 
 
@@ -519,8 +513,11 @@ opt-10 -S -load ../lib/libAndersen.so -dump-result  -anders-aa  ./testexe.ll  -o
 這邊時間 以2000001行來測試，這邊時間比較偏向於一開始蒐集的位置
 可以知道蒐集約束這邊應該不是瓶頸，或許是後面的fucntion
  void collectConstraints(const llvm::Module &);
-  void optimizeConstraints(); <====
-  void solveConstraints(); <===
+ 
+ void optimizeConstraints(); <====
+  
+ void solveConstraints(); <===
+  
   其實在分析專案前已經看過了，那邊也是在做類似的事情，也就是程式碼在其他 fucntion 的時候遍歷fucntion return 等等，不是在 main fucntion 
 thread pool 單執行緒版本 30s
 ![](https://i.imgur.com/ChAMoSM.png)
@@ -530,30 +527,25 @@ thread pool 單執行緒版本 30s
 可以看到為什麼我在這邊 還是單執行緒在程式碼量小的時候還可以多開thread 去處理可能要自己調task pool 和 thread 數量，也就是前面我說的為什麼有bug，太多 thread 搶著要mymap2 那這個地方又有加鎖，所以程式會被整個 lock 住
 ![](https://i.imgur.com/Xl2MqH6.png)
 
-結論就是
+下面針對 我的版本thread pool 和原本 做比較 
 單一thread
 thread pool lose
 多多少少  pthread_mutex_lock(&lock);
 會影響
-
 Original win
 
 多 thread 
-
 thread pool lose
-程式碼量大的話
 Original win
+程式碼量大的話
+thread pool版本都會只會小輸幾秒，應該就是最大的瓶頸就在存取我們的mymap2這部分導致我們的程式只能維持在單一thread
 
-thread pool版本都會小輸幾秒，應該就是最大的瓶頸就在存取我們的mymap2
-這部分。
 2thread
 ![](https://i.imgur.com/rZdQ9o5.png)
 4thread
 ![](https://i.imgur.com/8KtIZi4.png)
-
 8thread
 ![](https://i.imgur.com/NBuIg9X.png)
-
 Original win
 ![](https://i.imgur.com/uiySM3M.png)
 
